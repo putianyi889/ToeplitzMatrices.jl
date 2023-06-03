@@ -1,13 +1,6 @@
 using Pkg
 
-# Activate test environment on older Julia versions
-@static if VERSION < v"1.2"
-    Pkg.activate(@__DIR__)
-    Pkg.develop(PackageSpec(; path=dirname(@__DIR__)))
-    Pkg.instantiate()
-end
-
-using ToeplitzMatrices, Test, LinearAlgebra, Aqua
+using ToeplitzMatrices, Test, LinearAlgebra, Aqua, Random
 import StatsBase
 
 using FFTW: fft
@@ -20,6 +13,8 @@ end
 
 ns = 101
 nl = 2000
+
+Random.seed!(0)
 
 xs = randn(ns, 5)
 xl = randn(nl, 5)
@@ -67,6 +62,15 @@ for (As, Al, st) in cases
         @test Matrix(As') == Matrix(As)'
         @test Matrix(transpose(As)) == transpose(Matrix(As))
     end
+end
+
+@testset "vector indexing" begin
+    T = Toeplitz(rand(3,3))
+    @test T[1:2, 1:2] == Matrix(T)[1:2, 1:2]
+    @test AbstractMatrix{ComplexF64}(T) == Toeplitz{ComplexF64}(T.vc, T.vr)
+    C = Circulant(1:4)
+    @test C[1:2, 1:2] == Matrix(C)[1:2, 1:2]
+    @test AbstractMatrix{ComplexF64}(C) == Circulant{ComplexF64}(C.vc)
 end
 
 @testset "Mixed types" begin
@@ -165,6 +169,11 @@ end
         @test H[2,2] == 3
         @test H[7]  == 3
         @test diag(H) == [1,3,5,7,9]
+
+        @test H[1:2, 1:2] == Matrix(H)[1:2, 1:2]
+        Hc = AbstractMatrix{ComplexF64}(H)
+        @test Hc isa Hankel{ComplexF64}
+        @test size(Hc) == size(H)
 
         @test copy(H) == copyto!(similar(H), H)
 
@@ -358,7 +367,7 @@ end
         T=copy(TA)
         copyto!(T,TB)
         @test T == B
-        
+
         T=copy(TA)
     end
     @test fill!(Toeplitz(zeros(2,2)),1) == ones(2,2)
@@ -460,6 +469,12 @@ end
     for v1i in v1
         @test minimum(abs.(v1i .- v2)) < sqrt(eps(Float64))
     end
+    for (C,M) in ((C1,M1), (C3,M3), (C5,M5))
+        λ, V = eigen(C)
+        @test C * V ≈ V * Diagonal(λ)
+        @test V'V ≈ LinearAlgebra.I
+        @test det(C) ≈ det(M)
+    end
 
     # Test for issue #47
     I = inv(C1)*C1
@@ -467,6 +482,9 @@ end
     e = rand(5)
     # I should be close to identity
     @test I*e ≈ I2*e ≈ e
+
+    D = Diagonal(axes(C1,2))
+    @test mul!(similar(C1), C1, D) ≈ C1 * D
 end
 
 @testset "TriangularToeplitz" begin
