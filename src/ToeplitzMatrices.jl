@@ -1,5 +1,4 @@
 module ToeplitzMatrices
-# import StatsBase: levinson!, levinson
 import DSP: conv
 
 import Base: adjoint, convert, transpose, size, getindex, similar, copy, getproperty, inv, sqrt, copyto!, reverse, conj, zero, fill!, checkbounds, real, imag, isfinite, DimsInteger, iszero
@@ -9,12 +8,28 @@ import Base: AbstractMatrix
 import LinearAlgebra: Cholesky, Factorization
 import LinearAlgebra: ldiv!, factorize, lmul!, pinv, eigvals, eigvecs, eigen, Eigen, det
 import LinearAlgebra: cholesky!, cholesky, tril!, triu!, checksquare, rmul!, dot, mul!, tril, triu
+import LinearAlgebra: istriu, istril, isdiag
 import LinearAlgebra: UpperTriangular, LowerTriangular, Symmetric, Adjoint
+import LinearAlgebra: issymmetric, ishermitian
+import LinearAlgebra: eigvals, eigvecs, eigen
+
 import AbstractFFTs: Plan, plan_fft!
-import StatsBase
+
+using FillArrays
+using LinearAlgebra
+const AbstractFillVector{T} = FillArrays.AbstractFill{T,1}
+const HermOrSym{T,M} = Union{Hermitian{T,M}, Symmetric{T,M}}
 
 export AbstractToeplitz, Toeplitz, SymmetricToeplitz, Circulant, LowerTriangularToeplitz, UpperTriangularToeplitz, TriangularToeplitz, Hankel
 export durbin, trench, levinson
+
+@static if isdefined(Base, :require_one_based_indexing)
+    const require_one_based_indexing = Base.require_one_based_indexing
+else
+    function require_one_based_indexing(A...)
+        !Base.has_offset_axes(A...) || throw(ArgumentError("offset arrays are not supported but got an array with index other than 1"))
+    end
+end
 
 include("iterativeLinearSolvers.jl")
 
@@ -33,6 +48,21 @@ convert(::Type{AbstractToeplitz{T}}, A::AbstractToeplitz) where T = AbstractToep
 isconcrete(A::AbstractToeplitz) = isconcretetype(typeof(A.vc)) && isconcretetype(typeof(A.vr))
 iszero(A::AbstractToeplitz) = iszero(A.vc) && iszero(A.vr)
 
+function istril(A::AbstractToeplitz, k::Integer=0)
+    vr, vc = _vr(A), _vc(A)
+    all(iszero, @view vr[max(1, k+2):end]) && all(iszero, @view vc[2:min(-k,end)])
+end
+
+function istriu(A::AbstractToeplitz, k::Integer=0)
+    vr, vc = _vr(A), _vc(A)
+    all(iszero, @view vc[max(1, -k+2):end]) && all(iszero, @view vr[2:min(k,end)])
+end
+
+function isdiag(A::AbstractToeplitz)
+    vr, vc = _vr(A), _vc(A)
+    all(iszero, @view vr[2:end]) && all(iszero, @view vc[2:end])
+end
+
 """
     ToeplitzFactorization
 
@@ -48,6 +78,7 @@ include("toeplitz.jl")
 include("special.jl")
 include("hankel.jl")
 include("linearalgebra.jl")
+include("eigen.jl")
 
 """
     maybereal(::Type{T}, x)
@@ -58,5 +89,9 @@ maybereal(::Type, x) = x
 maybereal(::Type{<:Real}, x) = real(x)
 
 include("directLinearSolvers.jl")
+
+if !isdefined(Base, :get_extension)
+    include("../ext/ToeplitzMatricesStatsBaseExt.jl")
+end
 
 end #module
